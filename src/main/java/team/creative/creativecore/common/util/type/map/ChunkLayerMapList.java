@@ -1,144 +1,43 @@
 package team.creative.creativecore.common.util.type.map;
 
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.Iterator;
-import java.util.List;
+import java.util.*;
 import java.util.function.BiConsumer;
 
-import com.mojang.blaze3d.pipeline.RenderPipeline;
+import com.google.common.collect.Iterators;
 
-import it.unimi.dsi.fastutil.objects.Object2IntArrayMap;
-import it.unimi.dsi.fastutil.objects.Object2IntMap;
 import net.minecraft.client.renderer.chunk.ChunkSectionLayer;
-import team.creative.creativecore.common.util.type.itr.ComputeNextIterator;
-import team.creative.creativecore.common.util.type.list.Tuple;
 
-public class ChunkLayerMapList<T> implements Iterable<T> {
-    
-    private static final int LAYERS_COUNT = ChunkSectionLayer.values().length;
-    private static final Object2IntMap<RenderPipeline> LAYERS_INDEX_MAP;
-    
-    static {
-        LAYERS_INDEX_MAP = new Object2IntArrayMap<>();
-        int i = 0;
-        for (ChunkSectionLayer layer : ChunkSectionLayer.values()) {
-            LAYERS_INDEX_MAP.put(layer.pipeline(), i);
-            i++;
-        }
-    }
-    
-    private final List<T>[] content;
-    
+public class ChunkLayerMapList<T> extends EnumMap<ChunkSectionLayer, List<T>> implements Iterable<T> {
     public ChunkLayerMapList(ChunkLayerMapList<T> map) {
-        content = Arrays.copyOf(map.content, LAYERS_COUNT);
+        super(map);
     }
     
     public ChunkLayerMapList() {
-        content = new List[LAYERS_COUNT];
+        super(ChunkSectionLayer.class);
     }
     
-    private int index(RenderPipeline layer) {
-        return LAYERS_INDEX_MAP.getInt(layer);
+    public List<T> getOrCreate(ChunkSectionLayer layer) {
+        return super.computeIfAbsent(layer, _ -> new ArrayList<>());
     }
     
-    public List<T> getOrCreate(RenderPipeline layer) {
-        var result = content[index(layer)];
-        if (result == null)
-            content[index(layer)] = result = new ArrayList<>();
-        return result;
-    }
-    
-    public void add(RenderPipeline layer, T element) {
+    public void add(ChunkSectionLayer layer, T element) {
         getOrCreate(layer).add(element);
     }
     
-    public List<T> remove(RenderPipeline layer) {
-        int index = index(layer);
-        var result = content[index];
-        content[index] = null;
-        return result;
-    }
-    
-    public void clear() {
-        Arrays.fill(content, null);
-    }
-    
-    public void consumeEachLayer(BiConsumer<RenderPipeline, List> consumer) {
-        var tempList = new ArrayList<T>();
+    public void consumeEachLayer(BiConsumer<ChunkSectionLayer, List<T>> consumer) {
         for (ChunkSectionLayer layer : ChunkSectionLayer.values()) {
-            consumer.accept(layer.pipeline(), tempList);
-            if (!tempList.isEmpty()) { // Only create new list when necessary
-                content[index(layer.pipeline())] = tempList;
-                tempList = new ArrayList<>();
-            }
+            var list = new ArrayList<T>();
+            consumer.accept(layer, list);
+            super.put(layer, list);
         }
     }
-    
-    public Iterable<Tuple<RenderPipeline, List<T>>> tuples() {
-        return new ComputeNextIterator<>() {
-            
-            private int index;
-            private final Tuple<RenderPipeline, List<T>> pair = new Tuple<>(null, null);
-            
-            @Override
-            protected Tuple<RenderPipeline, List<T>> computeNext() {
-                while (index < content.length && content[index] == null)
-                    index++;
-                if (index >= content.length)
-                    return end();
-                pair.key = ChunkSectionLayer.values()[index].pipeline();
-                pair.value = content[index];
-                index++;
-                return pair;
-            }
-        };
+
+    public Iterable<Entry<ChunkSectionLayer, List<T>>> tuples() {
+        return super.entrySet();
     }
     
     @Override
     public Iterator<T> iterator() {
-        return new ComputeNextIterator<T>() {
-            
-            private int index;
-            private Iterator<T> itr;
-            
-            @Override
-            protected T computeNext() {
-                if (itr != null && itr.hasNext())
-                    return itr.next();
-                while (index < content.length && (content[index] == null || content[index].isEmpty()))
-                    index++;
-                if (index >= content.length)
-                    return end();
-                itr = content[index].iterator();
-                index++;
-                return itr.next();
-            }
-        };
+        return Iterators.concat(Iterators.transform(super.values().iterator(), List::iterator));
     }
-    
-    public boolean containsKey(RenderPipeline layer) {
-        return content[index(layer)] != null;
-    }
-    
-    public int size() {
-        int size = 0;
-        for (int i = 0; i < content.length; i++)
-            if (content[i] != null)
-                size++;
-        return size;
-    }
-    
-    public boolean isEmpty() {
-        for (int i = 0; i < content.length; i++)
-            if (content[i] != null && !content[i].isEmpty())
-                return false;
-        return true;
-    }
-    
-    @Override
-    public String toString() {
-        return "[" + Arrays.toString(content) + "]";
-    }
-    
 }
